@@ -1,11 +1,15 @@
 package expo.modules.zendeskmessagingexpo
 
 import android.content.Intent
+import android.net.http.HttpException
+import android.util.Log
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import zendesk.android.Zendesk
 import zendesk.logger.Logger
+import zendesk.android.events.ZendeskEventListener
+import zendesk.android.events.ZendeskEvent
 import zendesk.messaging.android.DefaultMessagingFactory
 
 class ZendeskMessagingExpoModule : Module() {
@@ -17,6 +21,8 @@ class ZendeskMessagingExpoModule : Module() {
     // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
     // The module will be accessible from `requireNativeModule('ZendeskMessagingExpo')` in JavaScript.
     Name("ZendeskMessagingExpo")
+    
+    Events("unreadMessageCountChanged", "authenticationFailed")
 
     // Sets constant properties on the module. Can take a dictionary or a closure that returns a dictionary.
     Constants(
@@ -28,7 +34,7 @@ class ZendeskMessagingExpoModule : Module() {
     Function("hello") {
 
 
-      "Hello world! 👋"
+      "Hello from zendesk android module! 👋"
     }
 
       // Defines a JavaScript function that always returns a Promise and whose native code
@@ -41,6 +47,7 @@ class ZendeskMessagingExpoModule : Module() {
           channelKey,
           successCallback = { zendesk ->
             // If Zendesk initialization is successful, resolve the promise
+            setupEventObserver()
             promise.resolve("Zendesk initialized successfully")
           },
           failureCallback = { error ->
@@ -51,6 +58,15 @@ class ZendeskMessagingExpoModule : Module() {
         )
       } catch (e: Exception) {
         // Catch any other unexpected exceptions and reject the promise
+        promise.reject("UnexpectedError", "An unexpected error occurred", e)
+      }
+    }
+
+    AsyncFunction("reset") { promise: Promise ->
+      try {
+        Zendesk.invalidate()
+        promise.resolve("Messaging view opened successfully")
+      } catch (e: Exception) {
         promise.reject("UnexpectedError", "An unexpected error occurred", e)
       }
     }
@@ -67,8 +83,6 @@ class ZendeskMessagingExpoModule : Module() {
         promise.reject("OpenMessagingViewError", "Failed to open messaging view: "+e.message, e)
       }
     }
-
-
 
     AsyncFunction("loginUser") { jwt: String, promise: Promise ->
 
@@ -92,6 +106,53 @@ class ZendeskMessagingExpoModule : Module() {
       }
     }
 
+    AsyncFunction("logoutUser") { promise: Promise ->
+      try {
+        // Call the logoutUser function from the Zendesk instance
+        Zendesk.instance?.logoutUser(
+            successCallback = {
+                promise.resolve(null) // Resolve the promise on success
+            },
+            failureCallback = { error ->
+               promise.reject("LogoutError", "Logout failed: ${error.message}", error)
+              }
+          )
+        } catch (e: Exception) {
+         promise.reject("UnexpectedError", "An unexpected error occurred", e)
+        }
+      }
 
+    AsyncFunction("getUnreadMessageCount") { ->
+        Zendesk.instance?.messaging?.getUnreadMessageCount() ?: 0
+    }
   }
+
+     private fun setupEventObserver() {
+        // Add the event listener for Zendesk events
+        Zendesk.instance.addEventListener { zendeskEvent ->
+            when (zendeskEvent) {
+                is ZendeskEvent.UnreadMessageCountChanged -> {
+                  Log.d("Zendesk", "Event received")
+
+                    val eventData = mapOf(
+                        "unreadCount" to zendeskEvent.currentUnreadCount
+                    )
+                    sendEvent("unreadMessageCountChanged", eventData)
+                }
+                is ZendeskEvent.AuthenticationFailed -> {
+                    val eventData = mapOf(
+                        "reason" to zendeskEvent.error.message
+                    )
+                    sendEvent("authenticationFailed", eventData)
+                }
+                else -> {
+                    // Handle other events if necessary
+                }
+            }
+        }
+    }
+
+      fun addEventListener(listener: ZendeskEventListener) = Zendesk.instance.addEventListener(listener)
+
+
 }

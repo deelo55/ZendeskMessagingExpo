@@ -40,5 +40,9 @@
     "expo": "*",
     "react": "*",
     "react-native": "*"
+  },
+  "sdkVersions": {
+    "android": "2.25.1",
+    "ios": "2.25.1"
   }
 }
